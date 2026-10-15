@@ -74,14 +74,14 @@ def ready(db=Depends(get_db)):
 
 @app.get('/admin',include_in_schema=False)
 def admin_page(admin=Depends(require_admin)):
-    return FileResponse(ROOT/'static/index.html',headers={'Cache-Control':'no-store'})
+    return FileResponse(ROOT/'static/admin.html',headers={'Cache-Control':'no-store'})
 
 @app.get('/',include_in_schema=False)
 @app.get('/favorites',include_in_schema=False)
 @app.get('/assistant',include_in_schema=False)
 @app.get('/profile',include_in_schema=False)
 def index():
-    return FileResponse(ROOT/'static/index.html',headers={'Cache-Control':'no-cache'})
+    return FileResponse(ROOT/'static/user.html',headers={'Cache-Control':'no-cache'})
 
 @app.get('/favicon.ico',include_in_schema=False)
 def favicon():
@@ -89,3 +89,18 @@ def favicon():
 
 # Exact mount only. Unknown /api routes and missing assets remain real 404s.
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
+
+# DEBUG: show details for admin requests (remove in production)
+@app.get('/debug_admin', include_in_schema=False)
+def debug_admin(request: Request, admin=Depends(require_admin)):
+    # Return useful debug info about the request and session
+    info = {
+        'origin': request.headers.get('origin'),
+        'host': request.headers.get('host'),
+        'secure_cookie': settings().secure_cookie,
+        'session_token': request.cookies.get('gef_session'),
+        'csrf_token': request.state.session.csrf if hasattr(request.state, 'session') else None,
+        'user': admin.username,
+        'role': admin.role,
+    }
+    return info

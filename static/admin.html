@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="uz" data-theme="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f7f3"><meta name="description" content="GEF_system — O‘zbekistondagi yoqilg‘i va quvvatlash shoxobchalarini toping.">
+<title>GEF_system · Admin panel</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/styles.css">
+<script async src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="/static/vendor/leaflet/leaflet.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main" data-i18n="skip">Asosiy qismga o‘tish</a>
+<div id="splash" class="splash" role="status"><img src="/static/logo.svg" width="60" height="60" alt=""><strong>GEF_system</strong><span class="loader"></span><span data-i18n="loading">Yuklanmoqda…</span></div>
+<aside class="sidebar">
+<a class="brand" href="/admin" aria-label="GEF_system"><img src="/static/logo.svg" width="40" height="40" alt=""><span>GEF<span class="brand-light">_system</span><small data-i18n="brandTag">Yo‘lingizdagi hamroh</small></span></a>
+<div class="nav-caption" data-i18n="workspace">ISH MAYDONI</div>
+<nav id="navigation" class="navigation" data-aria="mainNavigation">
+<a href="/admin" data-page="admin"><span data-icon="settings"></span><span data-i18n="admin">Admin panel</span></a>
+</nav>
+<div class="sidebar-foot"><div class="country-dot"></div><span data-i18n="country">O‘zbekiston</span><small>GEF_system · 1.0</small></div>
+</aside>
+<div class="workspace">
+<header class="topbar">
+<div class="mobile-brand"><img src="/static/logo.svg" width="32" height="32" alt=""><b>GEF_system</b></div>
+<div class="breadcrumb"><span data-i18n="country">O‘zbekiston</span><span>/</span><strong id="crumb" data-i18n="admin">Admin panel</strong></div>
+<div class="top-actions">
+<span id="connection" class="connection"><i></i><span data-i18n="connecting">Ulanmoqda</span></span>
+<label class="sr-only" for="language" data-i18n="language">Til</label>
+<select id="language" class="language" data-aria="language"><option value="uz">UZB</option><option value="ru">RU</option><option value="en">ENG</option></select>
+<button id="theme-toggle" class="icon-button" data-aria="toggleTheme"><span data-icon="moon"></span></button>
+<button id="account-button" class="avatar-button" data-aria="profile"><span data-icon="user"></span></button>
+</div>
+</header>
+<main id="main" tabindex="-1">
+<section id="page-admin" class="page">
+<div class="page-heading"><div><p class="eyebrow" data-i18n="management">BOSHQARUV</p><h1 data-i18n="admin">Admin panel</h1></div></div>
+<div id="admin-tabs" class="tabs">
+<button data-admin-tab="stations" class="selected" data-i18n="stationsTitle">Shoxobchalar</button>
+<button data-admin-tab="users" data-i18n="users">Foydalanuvchilar</button>
+<button data-admin-tab="support" data-i18n="support">Yordam</button>
+<button data-admin-tab="audit" data-i18n="audit">O‘zgarishlar tarixi</button>
+</div>
+<div id="admin-content"></div>
+</section>
+</main>
+</div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>
