@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# Run database migrations
+echo "Running database migrations..."
+alembic upgrade head
+
 # Auto-create admin if ADMIN_USERNAME and ADMIN_PASSWORD are set
 if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
     echo "Checking for admin user..."
