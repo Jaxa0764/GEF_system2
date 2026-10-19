@@ -88,7 +88,7 @@ def index():
 
 @app.get('/favicon.ico',include_in_schema=False)
 def favicon():
-    return FileResponse(ROOT/'static/logo.svg',media_type='image/svg+xml')
+    return FileResponse(ROOT/'static/logo.png',media_type='image/png')
 
 # Exact mount only. Unknown /api routes and missing assets remain real 404s.
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
