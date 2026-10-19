@@ -4,6 +4,7 @@ import io
 import json
 import secrets
 import time
+import re
 from datetime import timedelta
 from urllib.parse import parse_qsl
 from fastapi import APIRouter, Depends, Request, Response, UploadFile, File, Query
@@ -14,7 +15,7 @@ from .db import get_db
 from .config import settings
 from .errors import AppError
 from .models import User, Session, Recovery, Station, Product, Favorite, Rating, Visit, RouteSession, Support, Audit, utcnow
-from .schemas import Registration, Login, Reset, Names, Password, Preferences, StationInput, RouteInput, Arrival, Stars, Message, Chat, SupportStatus, TelegramData
+from .schemas import Registration, Login, Reset, Names, Password, Preferences, StationInput, RouteInput, Arrival, Stars, Message, Chat, SupportStatus, TelegramData, BotRegistration
 from .security import optional_user, require_user, require_admin, digest, password_hash, password_ok, safe_user, recovery_code, sign_in, aware, limit, client_key
 from .stations import listing, public_station, serialize, stats_map, distance
 from .providers import reverse_geocode, road_route
@@ -47,7 +48,7 @@ def login(payload:Login,request:Request,response:Response,db=Depends(get_db)):
     limit(db,'login_account',payload.username.lower(),10,900)
     user=db.scalar(select(User).where(User.username==payload.username.lower()))
     # Always perform a password hash for missing accounts to reduce enumeration timing.
-    valid=password_ok(user.password_hash,payload.password) if user else bool(password_hash(payload.password)) and False
+    valid=password_ok(user.password_hash,payload.password) if (user and user.password_hash) else bool(password_hash(payload.password)) and False
     if not user or not user.active or not valid: raise AppError('INVALID_CREDENTIALS',401)
     return sign_in(db,user,response,request)
 
@@ -88,7 +89,7 @@ def preferences(payload:Preferences,user=Depends(require_user),db=Depends(get_db
 @router.post('/me/password')
 def change_password(payload:Password,request:Request,user=Depends(require_user),db=Depends(get_db)):
     limit(db,'password_change',user.id,6,900)
-    if not password_ok(user.password_hash,payload.current_password): raise AppError('INVALID_CREDENTIALS',401)
+    if user.password_hash and not password_ok(user.password_hash,payload.current_password): raise AppError('INVALID_CREDENTIALS',401)
     user.password_hash=password_hash(payload.new_password)
     code=recovery_code(db,user.id)
     current=request.state.session.token_hash
@@ -261,6 +262,107 @@ def verify_telegram(payload:TelegramData,request:Request,db=Depends(get_db)):
     except ValueError: raise AppError('TELEGRAM_INVALID',401)
     # Verification only: never grants application membership/admin or logs an account in.
     return {'verified':True,'telegram_id':identity.get('id')}
+
+@router.post('/register-user')
+@router.post('/telegram/register-bot-user')
+def register_bot_user(payload:BotRegistration,request:Request,db=Depends(get_db)):
+    limit(db,'bot_register',client_key(request),120,60)
+    user=db.scalar(select(User).where(User.telegram_id==payload.telegram_id))
+    first_name=(payload.first_name or '').strip() or 'Foydalanuvchi'
+    last_name=(payload.last_name or '').strip()
+    phone=(payload.phone_number or '').strip()
+
+    if user:
+        if first_name: user.first_name=first_name[:80]
+        if last_name: user.last_name=last_name[:80]
+        if phone: user.phone_number=phone[:32]
+        db.commit()
+        return {'ok':True,'action':'updated','user':safe_user(user)}
+
+    raw_username=(payload.username or '').strip().lower()
+    cleaned=re.sub(r'[^a-z0-9_]','',raw_username)[:32]
+    candidate=cleaned if len(cleaned)>=3 else f'tg_{payload.telegram_id}'[:32]
+    base_candidate=candidate[:28]
+    counter=1
+    while db.scalar(select(User.id).where(User.username==candidate)):
+        candidate=f"{base_candidate}_{counter}"[:32]
+        counter+=1
+
+    user=User(
+        username=candidate,
+        first_name=first_name[:80],
+        last_name=last_name[:80],
+        phone_number=phone[:32] if phone else None,
+        telegram_id=payload.telegram_id,
+        role='user',
+        active=True,
+        language='uz',
+        theme='light',
+        password_hash=None
+    )
+    db.add(user)
+    db.commit()
+    return {'ok':True,'action':'created','user':safe_user(user)}
+
+@router.post('/telegram/auth')
+def telegram_auth(payload:TelegramData,request:Request,response:Response,db=Depends(get_db)):
+    limit(db,'telegram_auth',client_key(request),30,60)
+    cfg=settings()
+    if not cfg.telegram_token: raise AppError('TELEGRAM_UNCONFIGURED',503)
+    pairs=parse_qsl(payload.init_data,keep_blank_values=True)
+    if len({k for k,v in pairs})!=len(pairs): raise AppError('TELEGRAM_INVALID',401)
+    values=dict(pairs); provided=values.pop('hash','')
+    check='\n'.join(f'{k}={v}' for k,v in sorted(values.items()))
+    key=hmac.new(b'WebAppData',cfg.telegram_token.encode(),hashlib.sha256).digest()
+    expected=hmac.new(key,check.encode(),hashlib.sha256).hexdigest()
+    try: age=time.time()-int(values.get('auth_date','0'))
+    except ValueError: raise AppError('TELEGRAM_INVALID',401)
+    if not hmac.compare_digest(provided,expected) or not -300<=age<=86400: raise AppError('TELEGRAM_INVALID',401)
+    try: identity=json.loads(values.get('user','{}'))
+    except ValueError: raise AppError('TELEGRAM_INVALID',401)
+    telegram_id=identity.get('id')
+    if not telegram_id: raise AppError('TELEGRAM_INVALID',401)
+
+    user=db.scalar(select(User).where(User.telegram_id==telegram_id))
+    if not user:
+        tg_username=identity.get('username')
+        if tg_username:
+            user=db.scalar(select(User).where(User.username==tg_username.lower()))
+            if user and not user.telegram_id:
+                user.telegram_id=telegram_id
+                db.commit()
+
+    if not user:
+        first_name=(identity.get('first_name') or 'Foydalanuvchi').strip()
+        last_name=(identity.get('last_name') or '').strip()
+        tg_username=(identity.get('username') or '').strip().lower()
+        cleaned=re.sub(r'[^a-z0-9_]','',tg_username)[:32]
+        candidate=cleaned if len(cleaned)>=3 else f'tg_{telegram_id}'[:32]
+        base_candidate=candidate[:28]
+        counter=1
+        while db.scalar(select(User.id).where(User.username==candidate)):
+            candidate=f"{base_candidate}_{counter}"[:32]
+            counter+=1
+        user=User(
+            username=candidate,
+            first_name=first_name[:80],
+            last_name=last_name[:80],
+            telegram_id=telegram_id,
+            role='user',
+            active=True,
+            language=identity.get('language_code','uz') if identity.get('language_code') in ['uz','ru','en'] else 'uz',
+            theme='light',
+            password_hash=None
+        )
+        db.add(user)
+        db.flush()
+    else:
+        if identity.get('first_name'): user.first_name=identity['first_name'][:80]
+        if identity.get('last_name'): user.last_name=identity['last_name'][:80]
+        db.flush()
+
+    if not user.active: raise AppError('INVALID_CREDENTIALS',401)
+    return sign_in(db,user,response,request)|{'authenticated':True}
 
 @router.get('/admin/stations')
 def admin_stations(q:str=Query('',max_length=160),category:str|None=None,status:str='all',page:int=Query(1,ge=1),admin=Depends(require_admin),db=Depends(get_db)):

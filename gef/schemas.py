@@ -145,3 +145,11 @@ class SupportStatus(Strict):
 
 class TelegramData(Strict):
     init_data: str = Field(max_length=16000)
+
+class BotRegistration(BaseModel):
+    model_config = ConfigDict(extra='ignore', str_strip_whitespace=True)
+    telegram_id: int
+    first_name: str = Field(default='', max_length=80)
+    last_name: str = Field(default='', max_length=80)
+    username: str = Field(default='', max_length=64)
+    phone_number: str = Field(default='', max_length=32)

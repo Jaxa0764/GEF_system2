@@ -52,6 +52,8 @@ def client_key(request):
 def optional_user(request: Request, db=Depends(get_db)):
     token = request.cookies.get('gef_session', '')
     if not token:
+        token = request.headers.get('X-Session-Token', '')
+    if not token:
         return None
     session = db.get(Session, digest(token))
     if not session or aware(session.expires_at) <= utcnow():
@@ -80,7 +82,12 @@ def require_admin(user=Depends(require_user)):
     return user
 
 def safe_user(user):
-    return {k:getattr(user,k) for k in ['id','username','first_name','last_name','role','active','language','theme','created_at','last_login','last_activity']} | {'has_avatar': bool(user.avatar)}
+    return {k:getattr(user,k) for k in ['id','username','first_name','last_name','role','active','language','theme','created_at','last_login','last_activity']} | {
+        'has_avatar': bool(user.avatar),
+        'phone_number': getattr(user, 'phone_number', None),
+        'telegram_id': getattr(user, 'telegram_id', None),
+        'has_password': bool(user.password_hash)
+    }
 
 def recovery_code(db, user_id):
     code = secrets.token_urlsafe(32)
@@ -92,7 +99,7 @@ def recovery_code(db, user_id):
     return code
 
 def sign_in(db, user, response, request):
-    old = request.cookies.get('gef_session')
+    old = request.cookies.get('gef_session') or request.headers.get('X-Session-Token')
     if old:
         db.execute(delete(Session).where(Session.token_hash == digest(old)))
     token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
@@ -100,4 +107,4 @@ def sign_in(db, user, response, request):
     user.last_login = user.last_activity = utcnow()
     db.commit()
     response.set_cookie('gef_session', token, max_age=settings().session_days*86400, httponly=True, secure=settings().secure_cookie, samesite='lax', path='/')
-    return {'user': safe_user(user), 'csrf_token': csrf}
+    return {'user': safe_user(user), 'csrf_token': csrf, 'token': token}

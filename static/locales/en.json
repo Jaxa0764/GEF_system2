@@ -12,6 +12,7 @@
   "connected": "Database connected",
   "connectionError": "Connection error",
   "language": "Language",
+  "phoneNumber": "Phone number",
   "toggleTheme": "Toggle theme",
   "admin": "Admin panel",
   "offline": "You are offline. Reconnect to save changes.",

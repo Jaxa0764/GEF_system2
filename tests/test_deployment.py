@@ -117,3 +117,51 @@ def test_clean_checkout_cli_setup_seed_and_restart(tmp_path):
     run('manage.py','seed-demo','--confirm-demo')
     for _ in range(2):
         run('-c',"from fastapi.testclient import TestClient;from app import app;c=TestClient(app);assert c.get('/health/ready').status_code==200;data=c.get('/api/stations').json();assert data['total']==12;assert all(s['demo'] for s in data['items'])")
+
+
+def test_telegram_bot_registration_and_miniapp_auto_login(client, monkeypatch):
+    token = 'test-bot-token-auth'
+    monkeypatch.setenv('TELEGRAM_BOT_TOKEN', token)
+    settings.cache_clear()
+
+    # 1. Bot registers user when contact is shared
+    bot_payload = {
+        'telegram_id': 987654321,
+        'first_name': 'BotUser',
+        'last_name': 'Test',
+        'username': 'bot_user',
+        'phone_number': '+998901234567'
+    }
+    res = client.post('/api/register-user', json=bot_payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data['ok'] is True
+    assert data['user']['phone_number'] == '+998901234567'
+    assert data['user']['telegram_id'] == 987654321
+
+    # 2. User opens MiniApp in Telegram -> sends init_data to /api/telegram/auth
+    def signed_init_data():
+        values = {
+            'auth_date': str(int(time.time())),
+            'query_id': 'query_test_123',
+            'user': json.dumps({'id': 987654321, 'first_name': 'BotUser', 'last_name': 'Test', 'username': 'bot_user'})
+        }
+        key = hmac.new(b'WebAppData', token.encode(), hashlib.sha256).digest()
+        values['hash'] = hmac.new(key, '\n'.join(f'{k}={v}' for k, v in sorted(values.items())).encode(), hashlib.sha256).hexdigest()
+        return urlencode(values)
+
+    auth_res = client.post('/api/telegram/auth', json={'init_data': signed_init_data()})
+    assert auth_res.status_code == 200
+    auth_data = auth_res.json()
+    assert auth_data['authenticated'] is True
+    assert auth_data['user']['phone_number'] == '+998901234567'
+    assert auth_data['user']['telegram_id'] == 987654321
+
+    # 3. MiniApp checks session (/api/me) and user is already logged in!
+    me_res = client.get('/api/me')
+    assert me_res.status_code == 200
+    me_user = me_res.json()['user']
+    assert me_user is not None
+    assert me_user['phone_number'] == '+998901234567'
+    assert me_user['telegram_id'] == 987654321
+

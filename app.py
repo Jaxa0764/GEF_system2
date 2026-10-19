@@ -41,6 +41,9 @@ async def http_error(request,exc):
 @app.middleware('http')
 async def request_security(request:Request,call_next):
     if request.url.path.startswith('/api/') and request.method not in ['GET','HEAD','OPTIONS']:
+        if request.url.path in ['/api/register-user', '/api/telegram/register-bot-user']:
+            response = await call_next(request)
+            return response
         origin=request.headers.get('origin')
         allowed=settings().origin or str(request.base_url).rstrip('/')
         if request.headers.get('X-GEF-Request')!='1' or (origin and origin!=allowed):
@@ -69,7 +72,7 @@ def live():
 def ready(db=Depends(get_db)):
     db.execute(text('SELECT 1'))
     version=db.scalar(text('SELECT version_num FROM alembic_version'))
-    if version!='0001_initial': raise AppError('MIGRATIONS_REQUIRED',503)
+    if version not in ['0001_initial', '0002_telegram_fields']: raise AppError('MIGRATIONS_REQUIRED',503)
     return {'status':'ready'}
 
 @app.get('/admin',include_in_schema=False)

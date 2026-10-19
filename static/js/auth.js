@@ -1,4 +1,4 @@
-import {state,emit,storageGet} from './state.js';
+import {state,emit,storageGet,storageSet} from './state.js';
 import {api} from './api.js';
 import {$,$$,escape,tr,hydrate,formField,busy,toast,showError,modal,closeModal} from './ui.js';
 import {t,language,date} from './i18n.js';
@@ -6,12 +6,17 @@ import {setLanguage} from './i18n.js';
 import {icon} from './icons.js';
 import {setTheme,theme,savePreferences} from './theme.js';
 import {mergeGuestFavorites,refreshFavorites} from './favorites.js';
-import {openTelegram} from './telegram.js';
+import {openTelegram,authenticateTelegram} from './telegram.js';
 let authMode='login';
 export async function loadSession(){
- const result=await api('/me');state.user=result.user;state.csrf=result.csrf_token;
+ if(!state.user&&window.Telegram?.WebApp?.initData){
+  await authenticateTelegram();
+ }
+ if(!state.user){
+  const result=await api('/me');state.user=result.user;state.csrf=result.csrf_token;
+ }
  if(state.user){if(!storageGet('gef-language'))await setLanguage(state.user.language);if(!storageGet('gef-theme'))setTheme(state.user.theme)}
- updateAccount();return result;
+ updateAccount();return {user:state.user,csrf_token:state.csrf};
 }
 export function updateAccount(){
  $('#admin-link').hidden=state.user?.role!=='admin';$('#account-button').textContent=state.user?state.user.first_name.slice(0,1).toUpperCase():'';if(!state.user)$('#account-button').innerHTML=icon('user');
@@ -22,7 +27,7 @@ export function recoveryDialog(code){
  $('#copy-recovery',box).onclick=async()=>{try{await navigator.clipboard.writeText(code);toast(t('copied'))}catch{toast(t('copyManually'))}};
 }
 async function authenticated(result){
- state.user=result.user;state.csrf=result.csrf_token;updateAccount();emit('account-changed');await mergeGuestFavorites();renderProfile();if(result.recovery_code)recoveryDialog(result.recovery_code);
+ state.user=result.user;state.csrf=result.csrf_token;if(result.token){state.token=result.token;storageSet('gef-token',result.token)}updateAccount();emit('account-changed');await mergeGuestFavorites();renderProfile();if(result.recovery_code)recoveryDialog(result.recovery_code);
 }
 export function renderProfile(){
  const root=$('#profile-content');
@@ -30,7 +35,7 @@ export function renderProfile(){
  const u=state.user;
  root.innerHTML=`<div class="profile-layout"><aside class="panel profile-nav"><div class="profile-summary"><span class="profile-avatar">${u.has_avatar?`<img src="/api/me/avatar" width="45" height="45" class="profile-avatar" alt="${escape(t('avatar'))}">`:escape(u.first_name[0])}</span><div><b>${escape(u.first_name+' '+u.last_name)}</b><span class="tiny muted">@${escape(u.username)}</span></div></div><nav>${[['account','user'],['support','help'],['telegram','send'],['settings','settings']].map(([key,ic])=>`<button data-profile-tab="${key}" class="${state.profileTab===key?'selected':''}">${icon(ic)}${tr(key==='telegram'?'telegramChat':key)}</button>`).join('')}</nav><button id="logout">${icon('logout')}${tr('logout')}</button></aside><div class="panel profile-content" id="profile-panel"></div></div>`;
  $$('[data-profile-tab]',root).forEach(button=>button.onclick=()=>{state.profileTab=button.dataset.profileTab;renderProfile()});
- $('#logout').onclick=async()=>{try{await api('/auth/logout',{method:'POST'});state.user=null;state.csrf=null;updateAccount();await refreshFavorites();renderProfile();emit('account-changed')}catch(error){showError(error)}};
+ $('#logout').onclick=async()=>{try{await api('/auth/logout',{method:'POST'});state.user=null;state.csrf=null;state.token=null;storageSet('gef-token',null);updateAccount();await refreshFavorites();renderProfile();emit('account-changed')}catch(error){showError(error)}};
  const panel=$('#profile-panel');if(state.profileTab==='account')renderAccount(panel);if(state.profileTab==='support')renderSupport(panel);if(state.profileTab==='settings')renderSettings(panel);if(state.profileTab==='telegram'){panel.innerHTML=`<h2>${tr('telegramChat')}</h2><p class="muted">${tr('telegramDescription')}</p><button class="button" id="support-telegram">${tr('openTelegram')}</button>`;$('#support-telegram').onclick=()=>openTelegram(state.config.support_url)}
  hydrate(root);
 }
@@ -45,7 +50,7 @@ function renderAuth(root){
  hydrate(root);
 }
 function renderAccount(panel){
- const u=state.user;panel.innerHTML=`<h2>${tr('account')}</h2><form id="name-form" class="form-stack"><div class="form-grid">${formField('firstName','first_name','text',u.first_name,'required maxlength="80"')}${formField('lastName','last_name','text',u.last_name,'required maxlength="80"')}</div><div><button class="button" type="submit">${tr('save')}</button></div><p class="form-error" id="name-error" hidden></p></form><h3>${tr('avatar')}</h3><form id="avatar-form" class="form-stack"><label>${tr('avatarDescription')}<input name="file" type="file" accept="image/png,image/jpeg,image/webp" required></label><div><button class="button secondary" type="submit">${tr('uploadAvatar')}</button></div></form><h3>${tr('changePassword')}</h3><form id="password-form" class="form-stack">${formField('currentPassword','current_password','password','','required maxlength="128" autocomplete="current-password"')}${formField('newPassword','new_password','password','','required minlength="8" maxlength="128" autocomplete="new-password"')}${formField('confirmPassword','confirm_password','password','','required minlength="8" maxlength="128" autocomplete="new-password"')}<div><button class="button secondary" type="submit">${tr('changePassword')}</button></div><p class="form-error" id="password-error" hidden></p></form>`;
+ const u=state.user;const phoneHtml=u.phone_number?`<div class="field-item"><span class="tiny muted">${tr('phoneNumber')}</span><div class="user-phone"><b>${escape(u.phone_number)}</b></div></div>`:'';panel.innerHTML=`<h2>${tr('account')}</h2>${phoneHtml}<form id="name-form" class="form-stack"><div class="form-grid">${formField('firstName','first_name','text',u.first_name,'required maxlength="80"')}${formField('lastName','last_name','text',u.last_name,'required maxlength="80"')}</div><div><button class="button" type="submit">${tr('save')}</button></div><p class="form-error" id="name-error" hidden></p></form><h3>${tr('avatar')}</h3><form id="avatar-form" class="form-stack"><label>${tr('avatarDescription')}<input name="file" type="file" accept="image/png,image/jpeg,image/webp" required></label><div><button class="button secondary" type="submit">${tr('uploadAvatar')}</button></div></form><h3>${tr('changePassword')}</h3><form id="password-form" class="form-stack">${formField('currentPassword','current_password','password','','required maxlength="128" autocomplete="current-password"')}${formField('newPassword','new_password','password','','required minlength="8" maxlength="128" autocomplete="new-password"')}${formField('confirmPassword','confirm_password','password','','required minlength="8" maxlength="128" autocomplete="new-password"')}<div><button class="button secondary" type="submit">${tr('changePassword')}</button></div><p class="form-error" id="password-error" hidden></p></form>`;
  $('#name-form').onsubmit=async e=>{e.preventDefault();const b=$('button',e.target);busy(b,true);try{const r=await api('/me',{method:'PATCH',body:Object.fromEntries(new FormData(e.target))});state.user=r.user;toast(t('saved'));updateAccount()}catch(error){showError(error,$('#name-error'))}finally{busy(b,false)}};
  $('#avatar-form').onsubmit=async e=>{e.preventDefault();const b=$('button',e.target);busy(b,true);try{await api('/me/avatar',{method:'POST',body:new FormData(e.target)});state.user.has_avatar=true;toast(t('saved'));renderProfile()}catch(error){showError(error)}finally{busy(b,false)}};
  $('#password-form').onsubmit=async e=>{e.preventDefault();const f=e.target;if(f.elements.new_password.value!==f.elements.confirm_password.value){toast(t('passwordMismatch'),true);return}const b=$('button',f);busy(b,true);try{const r=await api('/me/password',{method:'POST',body:{current_password:f.elements.current_password.value,new_password:f.elements.new_password.value}});f.reset();recoveryDialog(r.recovery_code)}catch(error){showError(error,$('#password-error'))}finally{busy(b,false)}};

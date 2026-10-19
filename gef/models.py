@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, Float, Boolean, DateTime, ForeignKey, UniqueConstraint, JSON, Numeric, LargeBinary, Text, Index, CheckConstraint
+from sqlalchemy import String, Integer, BigInteger, Float, Boolean, DateTime, ForeignKey, UniqueConstraint, JSON, Numeric, LargeBinary, Text, Index, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -12,7 +12,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     first_name: Mapped[str] = mapped_column(String(80))
     last_name: Mapped[str] = mapped_column(String(80))
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(12), default='user')
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     language: Mapped[str] = mapped_column(String(2), default='uz')
@@ -21,6 +21,8 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     avatar: Mapped[bytes | None] = mapped_column(LargeBinary)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 class Session(Base):
     __tablename__ = 'sessions'
