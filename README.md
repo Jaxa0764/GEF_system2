@@ -93,7 +93,8 @@ Copy/modify `.env.example`, or use `init-local`. Production settings belong in t
 | `AI_BASE_URL` | `https://api.openai.com/v1` | Optional OpenAI-compatible chat-completions base |
 | `AI_API_KEY` | Empty | Optional server-only model provider key |
 | `AI_MODEL` | `gpt-4.1-mini` | A model supported by your configured provider |
-| `TELEGRAM_BOT_TOKEN` | Empty | Optional BotFather token for raw `initData` verification |
+| `TELEGRAM_BOT_TOKEN` | Empty | Optional BotFather token for Mini App verification and bot webhook replies |
+| `TELEGRAM_WEBAPP_URL` | Empty | Optional HTTPS Mini App URL; defaults to `APP_ORIGIN` |
 | `SUPPORT_CHAT_URL` | `https://t.me/WebShadoWin` | Browser-safe support contact, independent of the Mini App bot |
 | `ADMIN_USERNAME` | Empty; optional CLI input | Used only by explicit `create-admin` command |
 | `ADMIN_PASSWORD` | Empty; optional CLI input | Prefer the CLI hidden prompt; remove any provisioning variable afterward |

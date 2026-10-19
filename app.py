@@ -46,7 +46,7 @@ async def request_security(request:Request,call_next):
             return response
         origin=request.headers.get('origin')
         allowed=settings().origin or str(request.base_url).rstrip('/')
-        if request.headers.get('X-GEF-Request')!='1' or (origin and origin!=allowed):
+        if request.url.path!='/api/telegram/webhook' and (request.headers.get('X-GEF-Request')!='1' or (origin and origin!=allowed)):
             return JSONResponse({'error':{'code':'CSRF_INVALID','fields':{}}},status_code=403)
         length=request.headers.get('content-length')
         if length:

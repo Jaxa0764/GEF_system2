@@ -11,5 +11,11 @@ if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
     python manage.py create-admin --username "$ADMIN_USERNAME" 2>&1 || echo "Admin already exists or creation skipped."
 fi
 
+# Attach the configured bot to this deployment's HTTPS webhook.
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+    echo "Configuring Telegram webhook..."
+    python manage.py set-telegram-webhook
+fi
+
 # Start the server
 exec uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers

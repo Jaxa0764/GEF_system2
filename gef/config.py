@@ -27,6 +27,7 @@ class Settings:
     ai_key: str = field(default_factory=lambda: os.getenv('AI_API_KEY', ''))
     ai_model: str = field(default_factory=lambda: os.getenv('AI_MODEL', 'gpt-4.1-mini'))
     telegram_token: str = field(default_factory=lambda: os.getenv('TELEGRAM_BOT_TOKEN', ''))
+    telegram_webapp_url: str = field(default_factory=lambda: os.getenv('TELEGRAM_WEBAPP_URL', ''))
     support_url: str = field(default_factory=lambda: os.getenv('SUPPORT_CHAT_URL', 'https://t.me/WebShadoWin'))
     pressure_hours: int = field(default_factory=lambda: int(os.getenv('PRESSURE_FRESH_HOURS', '6')))
     @property

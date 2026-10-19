@@ -4,12 +4,14 @@ import getpass
 import os
 import secrets
 import re
+import httpx
 from datetime import timedelta
 from sqlalchemy import select, delete
 from gef.db import new_session
 from gef.config import settings
 from gef.models import User, Station, Product, Session, RouteSession, RateLimit, ProviderCache, utcnow
 from gef.security import password_hash, recovery_code
+from gef.telegram import webhook_secret
 
 
 def init_local(args):
@@ -74,6 +76,25 @@ def cleanup(args):
         db.commit()
     print('Expired transient records removed.')
 
+def set_telegram_webhook(args):
+    cfg=settings()
+    if not cfg.telegram_token: raise SystemExit('TELEGRAM_BOT_TOKEN is required.')
+    if not cfg.origin.startswith('https://'): raise SystemExit('APP_ORIGIN must be the public HTTPS Railway domain.')
+    url=cfg.origin+'/api/telegram/webhook'
+    try:
+        response=httpx.post(
+            f'https://api.telegram.org/bot{cfg.telegram_token}/setWebhook',
+            json={'url':url,'secret_token':webhook_secret(cfg.telegram_token),'allowed_updates':['message']},
+            timeout=15,
+        )
+        response.raise_for_status()
+        result=response.json()
+    except (httpx.HTTPError,ValueError) as exc:
+        raise SystemExit(f'Could not configure Telegram webhook: {type(exc).__name__}') from exc
+    if not result.get('ok'):
+        raise SystemExit('Telegram rejected the webhook configuration.')
+    print(f'Telegram webhook configured: {url}')
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='GEF_system management')
     sub=parser.add_subparsers(dest='command',required=True)
@@ -81,5 +102,6 @@ if __name__=='__main__':
     p=sub.add_parser('create-admin'); p.add_argument('--username'); p.set_defaults(run=admin)
     p=sub.add_parser('seed-demo'); p.add_argument('--confirm-demo',action='store_true'); p.set_defaults(run=seed)
     p=sub.add_parser('cleanup'); p.set_defaults(run=cleanup)
+    p=sub.add_parser('set-telegram-webhook'); p.set_defaults(run=set_telegram_webhook)
     p=sub.add_parser('generate-secret'); p.set_defaults(run=lambda args:print(secrets.token_urlsafe(48)))
     args=parser.parse_args(); args.run(args)

@@ -8,10 +8,11 @@ import re
 from datetime import timedelta
 from urllib.parse import parse_qsl
 from fastapi import APIRouter, Depends, Request, Response, UploadFile, File, Query
+from fastapi import Header
 from sqlalchemy import select, delete, func
 from sqlalchemy.exc import IntegrityError
 from PIL import Image, ImageOps, UnidentifiedImageError
-from .db import get_db
+from .db import get_db, new_session
 from .config import settings
 from .errors import AppError
 from .models import User, Session, Recovery, Station, Product, Favorite, Rating, Visit, RouteSession, Support, Audit, utcnow
@@ -20,8 +21,86 @@ from .security import optional_user, require_user, require_admin, digest, passwo
 from .stations import listing, public_station, serialize, stats_map, distance
 from .providers import reverse_geocode, road_route
 from .assistant import answer
+from .telegram import send_telegram_message, webhook_secret
 
 router=APIRouter(prefix='/api')
+
+@router.post('/telegram/webhook')
+async def telegram_webhook(request:Request,secret_token:str|None=Header(default=None,alias='X-Telegram-Bot-Api-Secret-Token')):
+    cfg=settings()
+    if not cfg.telegram_token: raise AppError('TELEGRAM_UNCONFIGURED',503)
+    if not secret_token or not hmac.compare_digest(secret_token,webhook_secret(cfg.telegram_token)):
+        raise AppError('TELEGRAM_INVALID',403)
+    try:
+        update=await request.json()
+    except ValueError:
+        raise AppError('TELEGRAM_INVALID',400)
+    if not isinstance(update,dict): raise AppError('TELEGRAM_INVALID',400)
+    message=update.get('message')
+    if not isinstance(message,dict): return {'ok':True}
+    sender=message.get('from')
+    chat=message.get('chat')
+    if not isinstance(sender,dict) or not isinstance(chat,dict) or not isinstance(chat.get('id'),int):
+        return {'ok':True}
+    chat_id=chat['id']
+    text=message.get('text')
+    command=text.split(maxsplit=1)[0].split('@',1)[0] if isinstance(text,str) and text.strip() else ''
+    if command == '/start':
+        webapp_url=cfg.telegram_webapp_url or cfg.origin
+        if not webapp_url.startswith('https://'):
+            raise AppError('TELEGRAM_WEBAPP_URL_REQUIRED',503)
+        await send_telegram_message(cfg.telegram_token,chat_id,
+            "👋 Assalomu alaykum! GEF_system botiga xush kelibsiz!\n\n"
+            "GEF_system mini ilovasi orqali o‘zingizga mos zapravkani tez va qulay toping:\n"
+            "📍 Atrofingizdagi eng yaqin zapravkalarni xaritada ko‘ring.\n"
+            "💰 Narxlarni solishtirib, hamyonbop variantni tanlang.\n"
+            "🗺️ Tanlangan zapravkagacha bo‘lgan masofa va taxminiy yo‘l vaqtini bilib oling.\n"
+            "🧭 Marshrutni xaritada ko‘rib, manzilga qulay yo‘lni toping.\n"
+            "🕒 Zapravkaning ish holati va ish vaqtini tekshiring.\n\n"
+            "Joylashuvingizni aniqlash uchun mini ilovada geolokatsiyaga ruxsat bering.\n\n"
+            "Mini ilovani oching va o‘zingizga yaqin zapravkani toping!",
+            {'inline_keyboard':[[{'text':'🚀 MiniApp ni ochish','web_app':{'url':webapp_url}}]]})
+        await send_telegram_message(cfg.telegram_token,chat_id,
+            "Avtomatik ro‘yxatdan o‘tish uchun pastdagi tugma orqali o‘z telefon raqamingizni ulashing.",
+            {'keyboard':[[{'text':'📱 Kontaktni ulashish','request_contact':True}]],'resize_keyboard':True,'one_time_keyboard':True})
+        return {'ok':True}
+
+    contact=message.get('contact')
+    if isinstance(contact,dict):
+        telegram_id=sender.get('id')
+        if not isinstance(telegram_id,int) or contact.get('user_id') != telegram_id:
+            await send_telegram_message(cfg.telegram_token,chat_id,
+                "Iltimos, faqat o‘zingizning Telegram akkauntingizga tegishli kontaktni ulashing.")
+            return {'ok':True}
+        phone=contact.get('phone_number')
+        if not isinstance(phone,str) or not phone.strip():
+            raise AppError('TELEGRAM_INVALID',400)
+        first_name=(sender.get('first_name') or 'Foydalanuvchi').strip()[:80]
+        last_name=(sender.get('last_name') or '').strip()[:80]
+        username=f'tg_{telegram_id}'
+        with new_session() as db:
+            user=db.scalar(select(User).where(User.telegram_id==telegram_id))
+            if user:
+                if not user.active:
+                    await send_telegram_message(cfg.telegram_token,chat_id,
+                        "Akkauntingiz vaqtincha faol emas. Yordam uchun administratorga murojaat qiling.")
+                    return {'ok':True}
+                user.first_name=first_name
+                user.last_name=last_name
+                user.phone_number=phone.strip()[:32]
+            else:
+                if db.scalar(select(User.id).where(User.username==username)):
+                    username=f'{username[:26]}_1'
+                user=User(username=username,first_name=first_name,last_name=last_name,
+                    phone_number=phone.strip()[:32],telegram_id=telegram_id,
+                    role='user',active=True,language='uz',theme='light',password_hash=None)
+                db.add(user)
+            db.commit()
+        await send_telegram_message(cfg.telegram_token,chat_id,
+            "✅ Ro‘yxatdan o‘tdingiz! Mini ilovani ochish uchun quyidagi tugmani bosing.",
+            {'inline_keyboard':[[{'text':'🚀 MiniApp ni ochish','web_app':{'url':cfg.telegram_webapp_url or cfg.origin}}]],
+             'remove_keyboard':True})
+    return {'ok':True}
 
 @router.get('/config')
 def config():
